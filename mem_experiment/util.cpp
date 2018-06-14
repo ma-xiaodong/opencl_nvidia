@@ -121,8 +121,10 @@ cl_program CreateProgram(cl_context context, cl_device_id device,
       printf("Error in builing program: \n");
       printf("%s\n", buildLog);
       clReleaseProgram(program);
+      kernelFile.close();
       return NULL;
     }
+    kernelFile.close();
     return program;
 }
 

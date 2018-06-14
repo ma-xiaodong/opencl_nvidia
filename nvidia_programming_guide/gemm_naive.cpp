@@ -61,7 +61,7 @@ cl_command_queue CreateCommandQueue(cl_context context, cl_device_id *device)
                             devices, NULL);
   handle_error(errNum != CL_SUCCESS, false, "clGetContextInfo:1");
 
-  commandQueue = clCreateCommandQueue(context, devices[0], 0, NULL);
+  commandQueue = clCreateCommandQueue(context, devices[0], CL_QUEUE_PROFILING_ENABLE, NULL);
   *device = devices[0];
   delete [] devices;
 
@@ -69,7 +69,7 @@ cl_command_queue CreateCommandQueue(cl_context context, cl_device_id *device)
 }
 
 cl_program CreateProgram(cl_context context, cl_device_id device,
-                         const char *fileName)
+                         const char *fileName, const char *build_opt)
 {
   cl_int errNum;
   cl_program program;
@@ -87,7 +87,7 @@ cl_program CreateProgram(cl_context context, cl_device_id device,
   const char *srcStr = srcStdStr.c_str();
 
   program = clCreateProgramWithSource(context, 1, (const char **)&srcStr, NULL, NULL);
-  errNum = clBuildProgram(program, 0, NULL, NULL, NULL, NULL);
+  errNum = clBuildProgram(program, 0, NULL, build_opt, NULL, NULL);
   if(errNum != CL_SUCCESS)
   {
     char buildLog[16384];
@@ -96,9 +96,12 @@ cl_program CreateProgram(cl_context context, cl_device_id device,
                           sizeof(buildLog), buildLog, NULL);
     cerr << "Error in builing program: " << endl;
     cerr << buildLog << endl;
+
+    kernelFile.close();
     clReleaseProgram(program);
     return NULL;
   }
+  kernelFile.close();
   return program;
 }
 
@@ -128,26 +131,21 @@ void Cleanup(cl_context context, cl_command_queue cmdQueue,
   return;
 }
 
-int compare_result(float *a, float *b, float *result)
+int compare_result(float *result, float *std_result, int size)
 {
   // only compare a random point
-  int r_row = rand() % AH;
-  int r_col = rand() % BW;
-  float t_val = 0.0f;
-
-  for(int j = 0; j < AW; j++)
+  int flag = 1;
+  for(int ii = 0; ii < size; ii++)
   {
-    t_val += a[r_row * AW + j] * b[j * BW + r_col];
+    if((result[ii] - std_result[ii]) < -1e-2 || (result[ii] - std_result[ii]) > 1e-2)
+    {
+      flag = 0;
+      cout << "Result error: [" << ii << "], ";
+      cout << result[ii] << " : " << std_result[ii] << endl;
+    }
   }
 
-  if(t_val != result[r_row * BW + r_col])
-  {
-    cout << "Result error: [" << r_row << ", " << r_col << "], ";
-    cout << result[r_row * BW + r_col] << " : " << t_val << endl;
-    return 0;
-  }
-
-  return 1;
+  return flag;
 }
 
 double timer(void)
@@ -161,25 +159,11 @@ double timer(void)
   return etime;
 }
 
-void mat_mul(float *a, float *b, float *result)
-{
-  for(int i = 0; i < AH; i++)
-  {
-    int a_m_idx = i * AW;
-    for(int j = 0; j < BW; j++)
-    {
-      int rlt_m_idx = i * BW + j;
-      for(int k = 0; k < AW; k++)
-        result[rlt_m_idx] += a[a_m_idx + k] * b[k * BW + j];
-    }
-  }
-}
-
 void tiled_mat_mul(float *a, float *b, float *result)
 {
-  int ah_blks = AH / TS;
-  int num_tiles = AW / TS;
-  int bw_blks = BW / TS;
+  int ah_blks = AH / TILE_SZ;
+  int num_tiles = AW / TILE_SZ;
+  int bw_blks = BW / TILE_SZ;
 
   for(int i = 0; i < ah_blks; i++)
   {
@@ -187,15 +171,15 @@ void tiled_mat_mul(float *a, float *b, float *result)
     {
       for(int k = 0; k < num_tiles; k++)
       {
-        for(int ii = 0; ii < TS; ii++)
+        for(int ii = 0; ii < TILE_SZ; ii++)
         {
-          int a_m_idx = (i * TS + ii) * AW + k * TS;
-          for(int jj = 0; jj < TS; jj++)
+          int a_m_idx = (i * TILE_SZ + ii) * AW + k * TILE_SZ;
+          for(int jj = 0; jj < TILE_SZ; jj++)
           {
-            int rlt_idx = (i * TS + ii) * BW + j * TS + jj;
-            int b_m_idx = k * TS * BW  + j * TS + jj;
+            int rlt_idx = (i * TILE_SZ + ii) * BW + j * TILE_SZ + jj;
+            int b_m_idx = k * TILE_SZ * BW  + j * TILE_SZ + jj;
 
-            for(int idx = 0; idx < TS; idx++)
+            for(int idx = 0; idx < TILE_SZ; idx++)
               result[rlt_idx] += a[a_m_idx + idx] * b[b_m_idx+ idx * BW];
           }
         }
@@ -205,8 +189,62 @@ void tiled_mat_mul(float *a, float *b, float *result)
   return;
 }
 
+void get_perf_info(const char *msg, cl_event *event, bool flops)
+{
+  cl_ulong start_time, end_time;
+
+  clGetEventProfilingInfo(*event, CL_PROFILING_COMMAND_START, sizeof(cl_ulong),
+                          &start_time, NULL);
+  clGetEventProfilingInfo(*event, CL_PROFILING_COMMAND_END, sizeof(cl_ulong),
+                          &end_time, NULL);
+
+  double total_time = (end_time - start_time) * 1e-6;
+  printf("%s, time: %.2fms.", msg, total_time);
+  if(flops)
+  {
+    double gflops;
+
+    gflops = ((AW * 2) / total_time) * 1e-6 * AH * BW;
+    printf(" gflops: %.2f.", gflops);
+  }
+  printf("\n");
+  return;
+}
+
 int main(int argc, char **argv)
 {
+  // gemm on host
+  float *a, *b;
+  float *std_result, *result;
+  int a_height, a_width, b_width;
+  double s_time, e_time;
+
+  a_height = AH;
+  a_width = AW;
+  b_width = BW;
+
+  a = (float *)malloc(sizeof(float) * SIZE_A);
+  b = (float *)malloc(sizeof(float) * SIZE_B);
+  std_result = (float *)malloc(sizeof(float) * SIZE_C);
+  result = (float *)malloc(sizeof(float) * SIZE_C);
+
+  for(int idx = 0; idx < SIZE_A; idx++)
+    a[idx] = rand() % 3 / 4.1;
+  for(int idx = 0; idx < SIZE_B; idx++)
+    b[idx] = rand() % 3 / 4.1;
+  for(int idx = 0; idx < SIZE_C; idx++)
+    std_result[idx] = 0.0f;
+
+  s_time = timer();
+  tiled_mat_mul(a, b, std_result);
+  e_time = timer();
+  cout << "Time used by tiled_mat_mul: " << e_time - s_time << endl;
+  cout << "Gflops: " << AW * 2  / (e_time - s_time) * (BW / 1.0e9) * AH << endl;
+
+  for(int idx = 0; idx < SIZE_C; idx++)
+    result[idx] = 0.0f;
+
+  // gemm on gpu
   cl_context context = 0;
   cl_command_queue commandQueue = 0;
   cl_program program = 0;
@@ -227,16 +265,29 @@ int main(int argc, char **argv)
     return 1;
   }
 
+  char build_opt[64];
+  sprintf(build_opt, "%s%d %s%d %s%d %s%d", "-DAW=", AW, "-DBW=", BW, 
+          "-DLCL_SZ=", LCL_SZ, "-DWPT=", WPT);
+
   // create opencl program for .cl kernel source
-  program = CreateProgram(context, device, "kernel_01.cl");
+  program = CreateProgram(context, device, "gemm_naive.cl", build_opt);
   if(program == NULL)
   {
     Cleanup(context, commandQueue, program, kernel, memObjects);
     return 1;
   }
 
-  // create opencl kernel
-  kernel = clCreateKernel(program, "hello_kernel", NULL);
+#ifdef LOCAL
+  size_t globalWorkSize[2] = {BW, AH};
+  size_t localWorkSize[2] = {LCL_SZ, LCL_SZ};
+  kernel = clCreateKernel(program, "gemm_local", NULL);
+#endif
+#ifdef LCL_WPT
+  size_t globalWorkSize[2] = {BW / WPT, AH};
+  size_t localWorkSize[2] = {LCL_SZ / WPT, LCL_SZ};
+  kernel = clCreateKernel(program, "gemm_local", NULL);
+#endif
+
   if(kernel == NULL)
   {
     cerr << "Failed to create kernel!" << endl;
@@ -244,57 +295,11 @@ int main(int argc, char **argv)
     return 1;
   }
 
-  float *a, *b;
-  float *result;
-  int a_height, a_width, b_width;
-
-  a_height = AH;
-  a_width = AW;
-  b_width = BW;
-
-  a = (float *)malloc(sizeof(float) * SIZE_A);
-  b = (float *)malloc(sizeof(float) * SIZE_B);
-  result = (float *)malloc(sizeof(float) * SIZE_C);
-
-  for(int idx = 0; idx < SIZE_A; idx++)
-    a[idx] = rand() % 3;
-  for(int idx = 0; idx < SIZE_B; idx++)
-    b[idx] = rand() % 3;
-  for(int idx = 0; idx < SIZE_C; idx++)
-    result[idx] = 0.0f;
-
-  double s_time, e_time;
-  s_time = timer();
-  mat_mul(a, b, result);
-  e_time = timer();
-  cout << "Time used by mat_mul: " << e_time - s_time << endl;
-
-  if(!compare_result(a, b, result))
-    cout << "The result of mat_mul is wrong!" << endl;
-  else
-    cout << "The result of mat_mul is correct!" << endl;
-
-  for(int idx = 0; idx < SIZE_C; idx++)
-    result[idx] = 0.0f;
-
-  s_time = timer();
-  tiled_mat_mul(a, b, result);
-  e_time = timer();
-  cout << "Time used by tiled_mat_mul: " << e_time - s_time << endl;
-
-  if(!compare_result(a, b, result))
-    cout << "The result of tiled_mat_mul is wrong!" << endl;
-  else
-    cout << "The result of tiled_mat_mul is correct!" << endl;
-
-  for(int idx = 0; idx < SIZE_C; idx++)
-    result[idx] = 0.0f;
-
-  memObjects[0] = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR,
+  memObjects[0] = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                  sizeof(float) * SIZE_A, a, NULL);
-  memObjects[1] = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR,
+  memObjects[1] = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
                                  sizeof(float) * SIZE_B, b, NULL);
-  memObjects[2] = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
+  memObjects[2] = clCreateBuffer(context, CL_MEM_READ_WRITE,
                                  sizeof(float) * SIZE_C, result, NULL);
 
   if(memObjects[0] == NULL || memObjects[1] == NULL ||
@@ -304,15 +309,10 @@ int main(int argc, char **argv)
     Cleanup(context, commandQueue, program, kernel, memObjects);
     return 1;
   }
-
-  size_t globalWorkSize[2] = {AH, BW};
-  size_t localWorkSize[2] = {TS, TS};
  
   errNum = clSetKernelArg(kernel, 0, sizeof(cl_mem), &memObjects[0]);
   errNum = clSetKernelArg(kernel, 1, sizeof(cl_mem), &memObjects[1]);
   errNum = clSetKernelArg(kernel, 2, sizeof(cl_mem), &memObjects[2]);
-  errNum = clSetKernelArg(kernel, 3, sizeof(int), (void *)(&b_width));
-  errNum = clSetKernelArg(kernel, 4, sizeof(int), (void *)(&a_width));
 
   if(errNum != CL_SUCCESS)
   {
@@ -321,21 +321,12 @@ int main(int argc, char **argv)
     return 1;
   }
 
-  s_time = timer();
   errNum = clEnqueueNDRangeKernel(commandQueue, kernel, 2, NULL, 
                                   globalWorkSize, localWorkSize,
                                   0, NULL, &event);
   
-  e_time = timer();
-  cout << "Time used by opencl: " << e_time - s_time << endl;
-  if(errNum != CL_SUCCESS)
-  {
-    cerr << "clEnqueueNDRangeKernel!" << endl;
-    Cleanup(context, commandQueue, program, kernel, memObjects);
-    return 1;
-  }
-
   errNum = clWaitForEvents(1, &event);
+  get_perf_info("Opencl", &event, 1);
   if(errNum != CL_SUCCESS)
   {
     cerr << "clWaitForEvents" << endl;
@@ -343,11 +334,11 @@ int main(int argc, char **argv)
     return 1;
   }
 
-
   errNum = clEnqueueReadBuffer(commandQueue, memObjects[2],
                                CL_TRUE, 0, SIZE_C * sizeof(float),
-                               result, 0, NULL, NULL);
+                               result, 0, NULL, &event);
   
+  errNum = clWaitForEvents(1, &event);
   if(errNum != CL_SUCCESS)
   {
     cerr << "clEnqueueReadBuffer"  << endl;
@@ -356,7 +347,7 @@ int main(int argc, char **argv)
   }
   cout << "Executed program successfully." << endl;
 
-  if(!compare_result(a, b, result))
+  if(!compare_result(result, std_result, SIZE_C))
     cout << "The result of opencl is wrong!" << endl;
   else
     cout << "The result of opencl is correct!" << endl;
@@ -366,6 +357,7 @@ int main(int argc, char **argv)
   free(a);
   free(b);
   free(result);
+  free(std_result);
 
   return 0;
 }
