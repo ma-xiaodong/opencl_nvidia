@@ -285,7 +285,7 @@ int main(int argc, char **argv)
 #ifdef LCL_WPT
   size_t globalWorkSize[2] = {BW / WPT, AH};
   size_t localWorkSize[2] = {LCL_SZ / WPT, LCL_SZ};
-  kernel = clCreateKernel(program, "gemm_local", NULL);
+  kernel = clCreateKernel(program, "gemm_lclwpt", NULL);
 #endif
 
   if(kernel == NULL)
