@@ -264,22 +264,31 @@ void lclvec()
     clReleaseProgram(program);
 }
 
-/*
 void lclvec_trans()
 {
     cl_int cl_status;
     cl_program program;
     cl_kernel kernel[2];
     cl_mem mem_a, mem_b, mem_c, mem_trans_b;
-    cl_event event;
+    cl_event event[3];
     size_t global_size[2], local_size[2];
-    char build_opt[64] = "\0";
 
     // Transpose B firstly.
+    mem_a = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, 
+                           sizeof(float) * AH * AW, a, &cl_status);
+    mem_b = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, 
+                           sizeof(float) * BH * BW, b, &cl_status);
+    mem_c = clCreateBuffer(__context, CL_MEM_WRITE_ONLY, 
+                           sizeof(float) * AH * BW, NULL, &cl_status);
+    mem_trans_b = clCreateBuffer(__context, CL_MEM_READ_WRITE, 
+                                 sizeof(float) * AH * BW, NULL, &cl_status);
+
+    char build_opt[64] = "\0";
     sprintf(build_opt, "%s%d %s%d %s%d", "-DAW=", AW, "-DBW=", BW, "-DLCL_SZ=", LCL_SZ);
     strcat(build_opt, "\0");
 
     program = CreateProgram(__context, __device, "05_lclvec_trans.cl", build_opt);
+
     kernel[0] = clCreateKernel(program, "transpose", &cl_status);
     if(cl_status != CL_SUCCESS)
     {
@@ -287,6 +296,14 @@ void lclvec_trans()
 	clReleaseProgram(program);
 	return;
     }
+    clSetKernelArg(kernel[0], 0, sizeof(cl_mem), (void *)&mem_b);
+    clSetKernelArg(kernel[0], 1, sizeof(cl_mem), (void *)&mem_trans_b);
+    
+    global_size[0] = BW; global_size[1] = AW;
+    local_size[0] = LCL_SZ; local_size[1] = LCL_SZ;
+
+    cl_status = clEnqueueNDRangeKernel(__command_queue, kernel[0], 2, NULL, global_size, 
+                                       local_size, 0, NULL, &(event[0]));
 
     // Matrix multiplication.
     kernel[1] = clCreateKernel(program, "lclvec_trans_opt", &cl_status);
@@ -296,45 +313,42 @@ void lclvec_trans()
 	clReleaseProgram(program);
 	return;
     }
-
-    mem_a = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, 
-                           sizeof(float) * AH * AW, a, &cl_status);
-    mem_b = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, 
-                           sizeof(float) * BH * BW, b, &cl_status);
-    mem_c = clCreateBuffer(__context, CL_MEM_WRITE_ONLY, 
-                           sizeof(float) * AH * BW, NULL, &cl_status);
-
-    clSetKernelArg(kernel, 0, sizeof(cl_mem), (void *)&mem_a);
-    clSetKernelArg(kernel, 1, sizeof(cl_mem), (void *)&mem_b);
-    clSetKernelArg(kernel, 2, sizeof(cl_mem), (void *)&mem_c);
+    clSetKernelArg(kernel[1], 0, sizeof(cl_mem), (void *)&mem_a);
+    clSetKernelArg(kernel[1], 1, sizeof(cl_mem), (void *)&mem_trans_b);
+    clSetKernelArg(kernel[1], 2, sizeof(cl_mem), (void *)&mem_c);
 
     global_size[0] = BW / 4; global_size[1] = AH;
     local_size[0] = LCL_SZ / 4; local_size[1] = LCL_SZ;
 
-    cl_status = clEnqueueNDRangeKernel(__command_queue, kernel, 2, NULL, global_size, 
-                                       local_size, 0, NULL, &event);
-
-    clWaitForEvents(1, &event);
-    get_perf_info("Gemm lclvec run", &event, true);
+    cl_status = clEnqueueNDRangeKernel(__command_queue, kernel[1], 2, NULL, global_size, 
+                                       local_size, 1, &(event[0]), &(event[1]));
 
     cl_status = clEnqueueReadBuffer(__command_queue, mem_c, CL_FALSE, 0, 
-                                    sizeof(float) * AH * BW, c, 0, NULL, &event);
-    clWaitForEvents(1, &event);
-    get_perf_info("Gemm lclvec read buffer", &event, false);
+                                    sizeof(float) * AH * BW, c, 1, &(event[1]), &(event[2]));
+    clWaitForEvents(1, &(event[2]));
+
+    get_perf_info("Gemm lclvec_trans trnaspose", &(event[0]), false);
+    get_perf_info("Gemm lclvec_trans run", &(event[1]), true);
+    get_perf_info("Gemm lclvec read buffer", &(event[2]), false);
+
+/*
     if(!compare_result(c, std_c, AH * BW))
 	cout << "Result wrong!" << endl;
     else
 	cout << "Result correct!" << endl;
+*/
 
-    clReleaseEvent(event);
+    clReleaseEvent(event[0]);
+    clReleaseEvent(event[1]);
+    clReleaseEvent(event[2]);
     clReleaseMemObject(mem_a);
     clReleaseMemObject(mem_b);
     clReleaseMemObject(mem_c);
+    clReleaseMemObject(mem_trans_b);
     clReleaseKernel(kernel[0]);
     clReleaseKernel(kernel[1]);
     clReleaseProgram(program);
 }
-*/
 
 int main(int argc, char **argv)
 {
@@ -371,12 +385,10 @@ int main(int argc, char **argv)
         c[idx] = 0.0f;
     lclvec();
 
-/*
     // Optimization using local && vectorization && transpose.
     for(int idx = 0; idx < AH * BW; idx++)
         c[idx] = 0.0f;
     lclvec_trans();
-*/
 
     // Release resource
     free(a); free(b); free(c); free(std_c);
