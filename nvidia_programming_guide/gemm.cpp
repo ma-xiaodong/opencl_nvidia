@@ -235,11 +235,13 @@ int main(int argc, char **argv)
   for(int idx = 0; idx < SIZE_C; idx++)
     std_result[idx] = 0.0f;
 
+#ifdef CMP_RLT
   s_time = timer();
   tiled_mat_mul(a, b, std_result);
   e_time = timer();
   cout << "Time used by tiled_mat_mul: " << e_time - s_time << endl;
   cout << "Gflops: " << AW * 2  / (e_time - s_time) * (BW / 1.0e9) * AH << endl;
+#endif
 
   for(int idx = 0; idx < SIZE_C; idx++)
     result[idx] = 0.0f;
@@ -270,7 +272,7 @@ int main(int argc, char **argv)
           "-DLCL_SZ=", LCL_SZ, "-DWPT=", WPT);
 
   // create opencl program for .cl kernel source
-  program = CreateProgram(context, device, "gemm_naive.cl", build_opt);
+  program = CreateProgram(context, device, "gemm.cl", build_opt);
   if(program == NULL)
   {
     Cleanup(context, commandQueue, program, kernel, memObjects);
@@ -286,6 +288,11 @@ int main(int argc, char **argv)
   size_t globalWorkSize[2] = {BW / WPT, AH};
   size_t localWorkSize[2] = {LCL_SZ / WPT, LCL_SZ};
   kernel = clCreateKernel(program, "gemm_lclwpt", NULL);
+#endif
+#ifdef LCL_VEC
+  size_t globalWorkSize[2] = {BW / 4, AH};
+  size_t localWorkSize[2] = {LCL_SZ / 4, LCL_SZ};
+  kernel = clCreateKernel(program, "gemm_lclvec", NULL);
 #endif
 
   if(kernel == NULL)
@@ -347,10 +354,12 @@ int main(int argc, char **argv)
   }
   cout << "Executed program successfully." << endl;
 
+#ifdef CMP_RLT
   if(!compare_result(result, std_result, SIZE_C))
     cout << "The result of opencl is wrong!" << endl;
   else
     cout << "The result of opencl is correct!" << endl;
+#endif
 
   Cleanup(context, commandQueue, program, kernel, memObjects);
 
