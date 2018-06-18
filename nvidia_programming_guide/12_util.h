@@ -9,6 +9,10 @@
 #define LCL_SZ          32
 #define WPT             4
 
+// rectangular tiling
+#define LCL_MN		32
+#define MN_TIMES	2
+
 void get_perf_info(const char *msg, cl_event *event, bool flops);
 void setup_cl();
 void clean_cl();
