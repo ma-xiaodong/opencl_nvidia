@@ -295,7 +295,12 @@ void lclvec_rt()
     strcat(build_opt, "\0");
 
     program = CreateProgram(__context, __device, "05_lclvec_rt.cl", build_opt);
-    kernel = clCreateKernel(program, "lclvec_rt_opt", &cl_status);
+#ifdef VEC4X4
+    kernel = clCreateKernel(program, "lclvec4x4_rt_opt", &cl_status);
+#elif defined VEC4X8
+    kernel = clCreateKernel(program, "lclvec4x8_rt_opt", &cl_status);
+#endif
+
     if(cl_status != CL_SUCCESS)
     {
 	cout << "Error: clCreateKernel!" << endl;
@@ -314,9 +319,15 @@ void lclvec_rt()
     clSetKernelArg(kernel, 1, sizeof(cl_mem), (void *)&mem_b);
     clSetKernelArg(kernel, 2, sizeof(cl_mem), (void *)&mem_c);
 
+#ifdef VEC4X4
     // Each workitem compute a 4 * 4 tile of the final matrix.
     global_size[0] = BW / 4; global_size[1] = AH / 4;
     local_size[0] = LCL_SZ / 4; local_size[1] = LCL_SZ / 4;
+#elif defined VEC4X8
+    // Each workitem compute a 4 * 4 tile of the final matrix.
+    global_size[0] = BW / 8; global_size[1] = AH / 4;
+    local_size[0] = LCL_SZ / 8; local_size[1] = LCL_SZ / 4;
+#endif
 
     s_time = timer();
     cl_status = clEnqueueNDRangeKernel(__command_queue, kernel, 2, NULL, global_size, 
