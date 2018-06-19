@@ -14,6 +14,7 @@ extern cl_context __context;
 extern cl_command_queue __command_queue;
 
 float *a, *b, *c, *std_c;
+double s_time, e_time;
 
 double timer(void)
 {
@@ -47,7 +48,7 @@ void naive()
     cl_program program;
     cl_kernel kernel;
     cl_mem mem_a, mem_b, mem_c;
-    cl_event event;
+    cl_event event[2];
     size_t global_size[2], local_size[2];
     char build_opt[64] = "\0";
 
@@ -78,18 +79,19 @@ void naive()
     global_size[0] = BW; global_size[1] = AH;
     local_size[0] = GRP_SZ; local_size[1] = GRP_SZ;
 
+    s_time = timer();
     cl_status = clEnqueueNDRangeKernel(__command_queue, kernel, 2, NULL, global_size, 
-                                       local_size, 0, NULL, &event);
-
-    clWaitForEvents(1, &event);
-    get_perf_info("Gemm naive run", &event, true);
-
+                                       local_size, 0, NULL, &(event[0]));
     cl_status = clEnqueueReadBuffer(__command_queue, mem_c, CL_FALSE, 0, 
-                                    sizeof(float) * AH * BW, std_c, 0, NULL, &event);
-    clWaitForEvents(1, &event);
-    get_perf_info("Gemm naive read buffer", &event, false);
+                                    sizeof(float) * AH * BW, std_c, 1, &(event[0]), &(event[1]));
+    clWaitForEvents(1, &(event[1]));
+    e_time = timer();
+    cout << "Clock time: " << e_time - s_time << "ms" << endl;
+    get_perf_info("Gemm naive run", &(event[0]), true);
+    get_perf_info("Gemm naive read buffer", &(event[1]), false);
 
-    clReleaseEvent(event);
+    clReleaseEvent(event[0]);
+    clReleaseEvent(event[1]);
     clReleaseMemObject(mem_a);
     clReleaseMemObject(mem_b);
     clReleaseMemObject(mem_c);
@@ -103,7 +105,7 @@ void local()
     cl_program program;
     cl_kernel kernel;
     cl_mem mem_a, mem_b, mem_c;
-    cl_event event;
+    cl_event event[2];
     size_t global_size[2], local_size[2];
     char build_opt[64] = "\0";
 
@@ -134,22 +136,25 @@ void local()
     global_size[0] = BW; global_size[1] = AH;
     local_size[0] = LCL_SZ; local_size[1] = LCL_SZ;
 
+    s_time = timer();
     cl_status = clEnqueueNDRangeKernel(__command_queue, kernel, 2, NULL, global_size, 
-                                       local_size, 0, NULL, &event);
-
-    clWaitForEvents(1, &event);
-    get_perf_info("Gemm local run", &event, true);
-
+                                       local_size, 0, NULL, &(event[0]));
     cl_status = clEnqueueReadBuffer(__command_queue, mem_c, CL_FALSE, 0, 
-                                    sizeof(float) * AH * BW, c, 0, NULL, &event);
-    clWaitForEvents(1, &event);
-    get_perf_info("Gemm local read buffer", &event, false);
+                                    sizeof(float) * AH * BW, c, 1, &(event[0]), &(event[1]));
+    clWaitForEvents(1, &(event[1]));
+    e_time = timer();
+ 
+    cout << "Clock time: " << e_time - s_time << "ms" << endl;
+    get_perf_info("Gemm local run", &(event[0]), true);
+    get_perf_info("Gemm local read buffer", &(event[1]), false);
+
     if(!compare_result(c, std_c, AH * BW))
 	cout << "Result wrong!" << endl;
     else
 	cout << "Result correct!" << endl;
 
-    clReleaseEvent(event);
+    clReleaseEvent(event[0]);
+    clReleaseEvent(event[1]);
     clReleaseMemObject(mem_a);
     clReleaseMemObject(mem_b);
     clReleaseMemObject(mem_c);
@@ -163,7 +168,7 @@ void lclwpt()
     cl_program program;
     cl_kernel kernel;
     cl_mem mem_a, mem_b, mem_c;
-    cl_event event;
+    cl_event event[2];
     size_t global_size[2], local_size[2];
     char build_opt[64] = "\0";
 
@@ -195,22 +200,25 @@ void lclwpt()
     global_size[0] = BW / WPT; global_size[1] = AH;
     local_size[0] = LCL_SZ / WPT; local_size[1] = LCL_SZ;
 
+    s_time = timer();
     cl_status = clEnqueueNDRangeKernel(__command_queue, kernel, 2, NULL, global_size, 
-                                       local_size, 0, NULL, &event);
-
-    clWaitForEvents(1, &event);
-    get_perf_info("Gemm lclwpt run", &event, true);
-
+                                       local_size, 0, NULL, &(event[0]));
     cl_status = clEnqueueReadBuffer(__command_queue, mem_c, CL_FALSE, 0, 
-                                    sizeof(float) * AH * BW, c, 0, NULL, &event);
-    clWaitForEvents(1, &event);
-    get_perf_info("Gemm lclwpt read buffer", &event, false);
+                                    sizeof(float) * AH * BW, c, 1, &(event[0]), &(event[1]));
+    clWaitForEvents(1, &(event[1]));
+    e_time = timer();
+
+    cout << "Clock time: " << e_time - s_time << "ms" << endl;
+    get_perf_info("Gemm lclwpt run", &(event[0]), true);
+    get_perf_info("Gemm lclwpt read buffer", &(event[1]), false);
+
     if(!compare_result(c, std_c, AH * BW))
 	cout << "Result wrong!" << endl;
     else
 	cout << "Result correct!" << endl;
 
-    clReleaseEvent(event);
+    clReleaseEvent(event[0]);
+    clReleaseEvent(event[1]);
     clReleaseMemObject(mem_a);
     clReleaseMemObject(mem_b);
     clReleaseMemObject(mem_c);
@@ -225,7 +233,7 @@ void lclvec()
     cl_program program;
     cl_kernel kernel;
     cl_mem mem_a, mem_b, mem_c;
-    cl_event event;
+    cl_event event[2];
     size_t global_size[2], local_size[2];
     char build_opt[64] = "\0";
 
@@ -256,22 +264,25 @@ void lclvec()
     global_size[0] = BW / 4; global_size[1] = AH;
     local_size[0] = LCL_SZ / 4; local_size[1] = LCL_SZ;
 
+    s_time = timer();
     cl_status = clEnqueueNDRangeKernel(__command_queue, kernel, 2, NULL, global_size, 
-                                       local_size, 0, NULL, &event);
-
-    clWaitForEvents(1, &event);
-    get_perf_info("Gemm lclvec run", &event, true);
-
+                                       local_size, 0, NULL, &(event[0]));
     cl_status = clEnqueueReadBuffer(__command_queue, mem_c, CL_FALSE, 0, 
-                                    sizeof(float) * AH * BW, c, 0, NULL, &event);
-    clWaitForEvents(1, &event);
-    get_perf_info("Gemm lclvec read buffer", &event, false);
+                                    sizeof(float) * AH * BW, c, 1, &(event[0]), &(event[1]));
+    clWaitForEvents(1, &(event[1]));
+    e_time = timer();
+
+    cout << "Clock time: " << e_time - s_time << "ms" << endl;
+    get_perf_info("Gemm lclvec run", &(event[0]), true);
+    get_perf_info("Gemm lclvec read buffer", &(event[1]), false);
+
     if(!compare_result(c, std_c, AH * BW))
 	cout << "Result wrong!" << endl;
     else
 	cout << "Result correct!" << endl;
 
-    clReleaseEvent(event);
+    clReleaseEvent(event[0]);
+    clReleaseEvent(event[1]);
     clReleaseMemObject(mem_a);
     clReleaseMemObject(mem_b);
     clReleaseMemObject(mem_c);
@@ -288,7 +299,6 @@ void lclvec_rt()
     cl_event event[2];
     size_t global_size[2], local_size[2];
     char build_opt[64] = "\0";
-    double s_time, e_time;
 
     cout << "\n++++ local mem && vectorization && register tiling optimization ++++" << endl;
     sprintf(build_opt, "%s%d %s%d %s%d", "-DAW=", AW, "-DBW=", BW, "-DLCL_SZ=", LCL_SZ);
@@ -365,7 +375,6 @@ void lclvec_rtrec()
     cl_event event[2];
     size_t global_size[2], local_size[2];
     char build_opt[64] = "\0";
-    double s_time, e_time;
 
     cout << "\n++++ rectangular local mem && vectorization && register tiling optimization ++++" << endl;
     sprintf(build_opt, "%s%d %s%d %s%d %s%d", "-DAW=", AW, "-DBW=", BW, "-DLCL_MN=", LCL_MN, 

@@ -5,9 +5,9 @@
 #define BH		AW
 #define BW		(2048)
 
-#define GRP_SZ          32
+#define GRP_SZ          16
 #define LCL_SZ          32
-#define WPT             4
+#define WPT             8
 
 // rectangular tiling
 #define LCL_MN		32
