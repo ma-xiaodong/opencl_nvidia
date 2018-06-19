@@ -65,9 +65,9 @@ void naive()
 	return;
     }
 
-    mem_a = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, 
+    mem_a = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, 
                            sizeof(float) * AH * AW, a, &cl_status);
-    mem_b = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, 
+    mem_b = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, 
                            sizeof(float) * BH * BW, b, &cl_status);
     mem_c = clCreateBuffer(__context, CL_MEM_WRITE_ONLY, 
                            sizeof(float) * AH * BW, NULL, &cl_status);
@@ -122,9 +122,9 @@ void local()
 	return;
     }
 
-    mem_a = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, 
+    mem_a = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, 
                            sizeof(float) * AH * AW, a, &cl_status);
-    mem_b = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, 
+    mem_b = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, 
                            sizeof(float) * BH * BW, b, &cl_status);
     mem_c = clCreateBuffer(__context, CL_MEM_WRITE_ONLY, 
                            sizeof(float) * AH * BW, NULL, &cl_status);
@@ -186,9 +186,9 @@ void lclwpt()
 	return;
     }
 
-    mem_a = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, 
+    mem_a = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, 
                            sizeof(float) * AH * AW, a, &cl_status);
-    mem_b = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, 
+    mem_b = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, 
                            sizeof(float) * BH * BW, b, &cl_status);
     mem_c = clCreateBuffer(__context, CL_MEM_WRITE_ONLY, 
                            sizeof(float) * AH * BW, NULL, &cl_status);
@@ -250,9 +250,9 @@ void lclvec()
 	return;
     }
 
-    mem_a = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, 
+    mem_a = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, 
                            sizeof(float) * AH * AW, a, &cl_status);
-    mem_b = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, 
+    mem_b = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, 
                            sizeof(float) * BH * BW, b, &cl_status);
     mem_c = clCreateBuffer(__context, CL_MEM_WRITE_ONLY, 
                            sizeof(float) * AH * BW, NULL, &cl_status);
@@ -318,9 +318,9 @@ void lclvec_rt()
 	return;
     }
 
-    mem_a = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, 
+    mem_a = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, 
                            sizeof(float) * AH * AW, a, &cl_status);
-    mem_b = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, 
+    mem_b = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, 
                            sizeof(float) * BH * BW, b, &cl_status);
     mem_c = clCreateBuffer(__context, CL_MEM_WRITE_ONLY, 
                            sizeof(float) * AH * BW, NULL, &cl_status);
@@ -390,9 +390,9 @@ void lclvec_rtrec()
 	return;
     }
 
-    mem_a = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, 
+    mem_a = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, 
                            sizeof(float) * AH * AW, a, &cl_status);
-    mem_b = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, 
+    mem_b = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, 
                            sizeof(float) * BH * BW, b, &cl_status);
     mem_c = clCreateBuffer(__context, CL_MEM_WRITE_ONLY, 
                            sizeof(float) * AH * BW, NULL, &cl_status);
@@ -466,7 +466,7 @@ int main(int argc, char **argv)
     for(int idx = 0; idx < AH * BW; idx++)
         c[idx] = 0.0f;
     lclvec();
-
+    
     // Optimization using local && vectorization && register tiling.
     for(int idx = 0; idx < AH * BW; idx++)
         c[idx] = 0.0f;

@@ -12,18 +12,24 @@ __kernel void lclvec4x4_rt_opt(__global float *A, __global float *B, __global fl
 
     acc[0] = (float4)0.0f; acc[1] = (float4)0.0f;
     acc[2] = (float4)0.0f; acc[3] = (float4)0.0f;
-    
+
+    unsigned int a_base, b_base;
+    a_base = g_row * AW + (l_col << 2);
+    b_base = BW * l_row + g_col; 
     for(int idx = 0; idx < num_tiles; idx++)
     {
-        Asub[l_row][l_col] = vload4(0, (__global float *)(A + g_row * AW + idx * LCL_SZ + (l_col << 2)));
-        Asub[l_row + 1][l_col] = vload4(0, (__global float *)(A + (g_row + 1) * AW + idx * LCL_SZ + (l_col << 2)));
-        Asub[l_row + 2][l_col] = vload4(0, (__global float *)(A + (g_row + 2) * AW + idx * LCL_SZ + (l_col << 2)));
-        Asub[l_row + 3][l_col] = vload4(0, (__global float *)(A + (g_row + 3) * AW + idx * LCL_SZ + (l_col << 2)));
+        Asub[l_row][l_col] = vload4(0, (__global float *)(A + a_base));
+        Asub[l_row + 1][l_col] = vload4(0, (__global float *)(A + a_base + AW));
+        Asub[l_row + 2][l_col] = vload4(0, (__global float *)(A + a_base + 2 * AW));
+        Asub[l_row + 3][l_col] = vload4(0, (__global float *)(A + a_base + 3 * AW));
+	a_base += LCL_SZ;
 
-	Bsub[l_row][l_col] = vload4(0, (__global float *)(B + (LCL_SZ * idx + l_row) * BW + g_col));
-	Bsub[l_row + 1][l_col] = vload4(0, (__global float *)(B + (LCL_SZ * idx + l_row + 1) * BW + g_col));
-	Bsub[l_row + 2][l_col] = vload4(0, (__global float *)(B + (LCL_SZ * idx + l_row + 2) * BW + g_col));
-	Bsub[l_row + 3][l_col] = vload4(0, (__global float *)(B + (LCL_SZ * idx + l_row + 3) * BW + g_col));
+	Bsub[l_row][l_col] = vload4(0, (__global float *)(B + b_base));
+	Bsub[l_row + 1][l_col] = vload4(0, (__global float *)(B + b_base + BW));
+	Bsub[l_row + 2][l_col] = vload4(0, (__global float *)(B + b_base + 2 * BW));
+	Bsub[l_row + 3][l_col] = vload4(0, (__global float *)(B + b_base + 3 * BW));
+	b_base += BW * LCL_SZ;
+
         barrier(CLK_LOCAL_MEM_FENCE);
 
 	// LCL_SZ must be devided by 4
