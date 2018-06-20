@@ -52,7 +52,7 @@ void naive()
     size_t global_size[2], local_size[2];
     char build_opt[64] = "\0";
 
-    cout << "\n++++ naive run ++++" << endl;
+    cout << "\n++++ 01 naive run ++++" << endl;
     sprintf(build_opt, "%s%d %s%d", "-DAW=", AW, "-DBW=", BW);
     strcat(build_opt, "\0");
     
@@ -109,7 +109,7 @@ void local()
     size_t global_size[2], local_size[2];
     char build_opt[64] = "\0";
 
-    cout << "\n++++ local mem optimization ++++" << endl;
+    cout << "\n++++ 02 local mem optimization ++++" << endl;
     sprintf(build_opt, "%s%d %s%d %s%d", "-DAW=", AW, "-DBW=", BW, "-DLCL_SZ=", LCL_SZ);
     strcat(build_opt, "\0");
 
@@ -172,7 +172,7 @@ void lclwpt()
     size_t global_size[2], local_size[2];
     char build_opt[64] = "\0";
 
-    cout << "\n++++ local mem && work per tile optimization ++++" << endl;
+    cout << "\n++++ 03 local mem && work per tile optimization ++++" << endl;
     sprintf(build_opt, "%s%d %s%d %s%d %s%d", "-DAW=", AW, "-DBW=", BW, "-DLCL_SZ=", LCL_SZ,
             "-DWPT=", WPT);
     strcat(build_opt, "\0");
@@ -237,7 +237,7 @@ void lclvec()
     size_t global_size[2], local_size[2];
     char build_opt[64] = "\0";
 
-    cout << "\n++++ local mem && vectorization optimization ++++" << endl;
+    cout << "\n++++ 04 local mem && vectorization optimization ++++" << endl;
     sprintf(build_opt, "%s%d %s%d %s%d", "-DAW=", AW, "-DBW=", BW, "-DLCL_SZ=", LCL_SZ);
     strcat(build_opt, "\0");
 
@@ -300,7 +300,7 @@ void lclvec_rt()
     size_t global_size[2], local_size[2];
     char build_opt[64] = "\0";
 
-    cout << "\n++++ local mem && vectorization && register tiling optimization ++++" << endl;
+    cout << "\n++++ 05 local mem && vectorization && register tiling optimization ++++" << endl;
     sprintf(build_opt, "%s%d %s%d %s%d", "-DAW=", AW, "-DBW=", BW, "-DLCL_SZ=", LCL_SZ);
     strcat(build_opt, "\0");
 
@@ -376,7 +376,7 @@ void lclvec_rtrec()
     size_t global_size[2], local_size[2];
     char build_opt[64] = "\0";
 
-    cout << "\n++++ rectangular local mem && vectorization && register tiling optimization ++++" << endl;
+    cout << "\n++++ 06 rectangular local mem && vectorization && register tiling optimization ++++" << endl;
     sprintf(build_opt, "%s%d %s%d %s%d %s%d", "-DAW=", AW, "-DBW=", BW, "-DLCL_MN=", LCL_MN, 
             "-DMN_TIMES=", MN_TIMES);
     strcat(build_opt, "\0");
@@ -417,6 +417,77 @@ void lclvec_rtrec()
     cout << "Clock time: " << e_time - s_time << "ms" << endl;
     get_perf_info("Gemm lclvec_rtrec run", &(event[0]), true);
     get_perf_info("Gemm lclvec_rtrec read buffer", &(event[1]), false);
+
+    if(!compare_result(c, std_c, AH * BW))
+	cout << "Result wrong!" << endl;
+    else
+	cout << "Result correct!" << endl;
+
+    clReleaseEvent(event[0]);
+    clReleaseEvent(event[1]);
+    clReleaseMemObject(mem_a);
+    clReleaseMemObject(mem_b);
+    clReleaseMemObject(mem_c);
+    clReleaseKernel(kernel);
+    clReleaseProgram(program);
+}
+
+/****************
+Parameters:
+  1. tile size of dimension M and N (they have the same tile size)
+  2. tile size of dimension K
+****************/
+
+void tuning(int tile_mn, int tile_k)
+{
+    cl_int cl_status;
+    cl_program program;
+    cl_kernel kernel;
+    cl_mem mem_a, mem_b, mem_c;
+    cl_event event[2];
+    size_t global_size[2], local_size[2];
+    char build_opt[64] = "\0";
+
+    cout << "\n++++ 07 gemm tuning on nvidia ++++" << endl;
+    sprintf(build_opt, "%s%d %s%d %s%d %s%d", "-DAW=", AW, "-DBW=", BW, "-DTILE_MN=", tile_mn, 
+            "-DTILE_K=", tile_k);
+    strcat(build_opt, "\0");
+
+    program = CreateProgram(__context, __device, "07_tuning.cl", build_opt);
+    kernel = clCreateKernel(program, "tuning4x4_opt", &cl_status);
+    if(cl_status != CL_SUCCESS)
+    {
+	cout << "Error: clCreateKernel tuning4x4_opt!" << endl;
+	clReleaseProgram(program);
+	return;
+    }
+
+    mem_a = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, 
+                           sizeof(float) * AH * AW, a, &cl_status);
+    mem_b = clCreateBuffer(__context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, 
+                           sizeof(float) * BH * BW, b, &cl_status);
+    mem_c = clCreateBuffer(__context, CL_MEM_WRITE_ONLY, 
+                           sizeof(float) * AH * BW, NULL, &cl_status);
+
+    clSetKernelArg(kernel, 0, sizeof(cl_mem), (void *)&mem_a);
+    clSetKernelArg(kernel, 1, sizeof(cl_mem), (void *)&mem_b);
+    clSetKernelArg(kernel, 2, sizeof(cl_mem), (void *)&mem_c);
+
+    global_size[0] = BW / 4; global_size[1] = AH / 4;
+    local_size[0] = tile_mn / 4; local_size[1] = tile_mn / 4;
+
+    s_time = timer();
+    cl_status = clEnqueueNDRangeKernel(__command_queue, kernel, 2, NULL, global_size, 
+                                       local_size, 0, NULL, &(event[0]));
+    
+    cl_status = clEnqueueReadBuffer(__command_queue, mem_c, CL_FALSE, 0, 
+                                    sizeof(float) * AH * BW, c, 1, &(event[0]), &(event[1]));
+    clWaitForEvents(1, &event[1]);
+    e_time = timer();
+
+    cout << "Clock time: " << e_time - s_time << "ms" << endl;
+    get_perf_info("Gemm tuning run", &(event[0]), true);
+    get_perf_info("Gemm tuning read buffer", &(event[1]), false);
 
     if(!compare_result(c, std_c, AH * BW))
 	cout << "Result wrong!" << endl;
@@ -476,6 +547,11 @@ int main(int argc, char **argv)
     for(int idx = 0; idx < AH * BW; idx++)
         c[idx] = 0.0f;
     lclvec_rtrec();
+
+    // Optimization using local && vectorization && register tiling.
+    for(int idx = 0; idx < AH * BW; idx++)
+        c[idx] = 0.0f;
+    tuning(32, 16);
 
     // Release resource
     free(a); free(b); free(c); free(std_c);
